@@ -3,61 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connect Chat - SNS</title>
+    <title>Connect Chat</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Login Screen -->
     <div class="login-screen" id="loginScreen">
         <div class="login-box">
             <h1>Connect</h1>
             <p>친구들과 실시간 채팅하세요!</p>
-            
-            <!-- Login Form -->
             <div class="login-form" id="loginForm">
                 <input type="text" id="loginUsername" placeholder="이름" maxlength="12">
                 <input type="password" id="loginPassword" placeholder="비밀번호">
                 <button id="loginBtn">로그인</button>
-                <div class="switch-form">
-                    계정이 없으신가요? <span id="showRegister">회원가입</span>
-                </div>
+                <div class="switch-form">계정이 없으신가요? <span id="showRegister">회원가입</span></div>
                 <div class="error-message" id="loginError"></div>
             </div>
-
-            <!-- Register Form -->
             <div class="login-form" id="registerForm" style="display:none;">
                 <input type="text" id="regUsername" placeholder="이름 (2~12자)" maxlength="12">
                 <input type="password" id="regPassword" placeholder="비밀번호 (4자 이상)">
                 <div class="color-picker">
                     <span>프로필 색상:</span>
                     <div class="colors">
-                        <div class="color-option selected" style="background: #FF6B6B;" data-color="#FF6B6B"></div>
-                        <div class="color-option" style="background: #4ECDC4;" data-color="#4ECDC4"></div>
-                        <div class="color-option" style="background: #95E1D3;" data-color="#95E1D3"></div>
-                        <div class="color-option" style="background: #F38181;" data-color="#F38181"></div>
-                        <div class="color-option" style="background: #6366f1;" data-color="#6366f1"></div>
-                        <div class="color-option" style="background: #a855f7;" data-color="#a855f7"></div>
-                        <div class="color-option" style="background: #ec4899;" data-color="#ec4899"></div>
-                        <div class="color-option" style="background: #14b8a6;" data-color="#14b8a6"></div>
+                        <div class="color-option selected" style="background:#FF6B6B;" data-color="#FF6B6B"></div>
+                        <div class="color-option" style="background:#4ECDC4;" data-color="#4ECDC4"></div>
+                        <div class="color-option" style="background:#95E1D3;" data-color="#95E1D3"></div>
+                        <div class="color-option" style="background:#F38181;" data-color="#F38181"></div>
+                        <div class="color-option" style="background:#6366f1;" data-color="#6366f1"></div>
+                        <div class="color-option" style="background:#a855f7;" data-color="#a855f7"></div>
+                        <div class="color-option" style="background:#ec4899;" data-color="#ec4899"></div>
+                        <div class="color-option" style="background:#14b8a6;" data-color="#14b8a6"></div>
                     </div>
                 </div>
                 <button id="registerBtn">회원가입</button>
-                <div class="switch-form">
-                    이미 계정이 있으신가요? <span id="showLogin">로그인</span>
-                </div>
+                <div class="switch-form">이미 계정이 있으신가요? <span id="showLogin">로그인</span></div>
                 <div class="error-message" id="registerError"></div>
             </div>
         </div>
     </div>
 
-    <!-- Chat App -->
     <div class="app-container" id="appContainer" style="display:none;">
-        <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="logo">
-                <h2>Connect</h2>
-            </div>
-            
+            <div class="logo"><h2>Connect</h2></div>
             <div class="user-profile">
                 <div class="avatar my-avatar" id="myAvatar">나</div>
                 <div class="user-info">
@@ -65,19 +51,14 @@
                     <span class="status online">온라인</span>
                 </div>
             </div>
-
             <nav class="chat-list">
                 <div class="section-title">온라인 사용자</div>
-                <ul id="onlineUsers">
-                </ul>
+                <ul id="onlineUsers"></ul>
             </nav>
-
             <div class="sidebar-footer">
                 <button class="logout-btn" id="logoutBtn">로그아웃</button>
             </div>
         </aside>
-
-        <!-- Main Chat Area -->
         <main class="chat-main">
             <header class="chat-header">
                 <button class="menu-btn" id="menuBtn">☰</button>
@@ -86,17 +67,11 @@
                     <span class="member-count" id="memberCount">0명 접속중</span>
                 </div>
             </header>
-
-            <div class="chat-messages" id="chatMessages">
-            </div>
-
+            <div class="chat-messages" id="chatMessages"></div>
             <div class="typing-indicator" id="typingIndicator" style="display:none;">
                 <span id="typingUser"></span> 입력 중
-                <div class="typing-dots">
-                    <span></span><span></span><span></span>
-                </div>
+                <div class="typing-dots"><span></span><span></span><span></span></div>
             </div>
-
             <div class="chat-input-area">
                 <div class="input-wrapper">
                     <input type="text" id="messageInput" placeholder="메시지를 입력하세요..." autocomplete="off">
@@ -107,7 +82,6 @@
         </main>
     </div>
 
-    <!-- Emoji Picker -->
     <div class="emoji-picker" id="emojiPicker">
         <div class="emoji-grid">
             <span class="emoji" data-emoji="😀">😀</span>
@@ -128,7 +102,6 @@
             <span class="emoji" data-emoji="💪">💪</span>
         </div>
     </div>
-
     <script src="script.js"></script>
 </body>
 </html>

@@ -10,13 +10,23 @@ let callTarget = null;
 let isVideoCall = false;
 let isMuted = false;
 let isVideoOff = false;
+let connectionFailedTimer = null;
 
 const ICE_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
-    ]
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.ekiga.net' },
+        { urls: 'stun:stun.ideasip.com' },
+        { urls: 'stun:stun.schlund.de' },
+        { urls: 'stun:stun.voiparound.com' },
+        { urls: 'stun:stun.voipstunt.com' },
+        { urls: 'stun:stun.services.mozilla.com' },
+    ],
+    iceCandidatePoolSize: 10
 };
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -310,9 +320,28 @@ document.addEventListener('DOMContentLoaded', function() {
             if (peerConnection) {
                 const state = peerConnection.connectionState;
                 document.getElementById('callStatus').textContent = state === 'connected' ? '통화 중...' : state === 'failed' ? '연결 실패' : '연결 중...';
-                if (state === 'failed' || state === 'disconnected') {
-                    endCall();
-                    showSystem('통화 연결이 끊어졌습니다.');
+                if (state === 'connected') {
+                    if (connectionFailedTimer) { clearTimeout(connectionFailedTimer); connectionFailedTimer = null; }
+                } else if (state === 'failed') {
+                    if (!connectionFailedTimer) {
+                        connectionFailedTimer = setTimeout(() => {
+                            if (peerConnection && peerConnection.connectionState === 'failed') {
+                                endCall();
+                                showSystem('통화 연결에 실패했습니다. 네트워크 상태를 확인해주세요.');
+                            }
+                            connectionFailedTimer = null;
+                        }, 5000);
+                    }
+                } else if (state === 'disconnected') {
+                    if (!connectionFailedTimer) {
+                        connectionFailedTimer = setTimeout(() => {
+                            if (peerConnection) {
+                                endCall();
+                                showSystem('통화 연결이 끊어졌습니다.');
+                            }
+                            connectionFailedTimer = null;
+                        }, 5000);
+                    }
                 }
             }
         };
@@ -385,9 +414,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (peerConnection) {
                     const state = peerConnection.connectionState;
                     document.getElementById('callStatus').textContent = state === 'connected' ? '통화 중...' : state === 'failed' ? '연결 실패' : '연결 중...';
-                    if (state === 'failed' || state === 'disconnected') {
-                        endCall();
-                        showSystem('통화 연결이 끊어졌습니다.');
+                    if (state === 'connected') {
+                        if (connectionFailedTimer) { clearTimeout(connectionFailedTimer); connectionFailedTimer = null; }
+                    } else if (state === 'failed') {
+                        if (!connectionFailedTimer) {
+                            connectionFailedTimer = setTimeout(() => {
+                                if (peerConnection && peerConnection.connectionState === 'failed') {
+                                    endCall();
+                                    showSystem('통화 연결에 실패했습니다. 네트워크 상태를 확인해주세요.');
+                                }
+                                connectionFailedTimer = null;
+                            }, 5000);
+                        }
+                    } else if (state === 'disconnected') {
+                        if (!connectionFailedTimer) {
+                            connectionFailedTimer = setTimeout(() => {
+                                if (peerConnection) {
+                                    endCall();
+                                    showSystem('통화 연결이 끊어졌습니다.');
+                                }
+                                connectionFailedTimer = null;
+                            }, 5000);
+                        }
                     }
                 }
             };
@@ -452,6 +500,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function endCall() {
         clearCallTimeout();
+        if (connectionFailedTimer) { clearTimeout(connectionFailedTimer); connectionFailedTimer = null; }
         if (peerConnection) {
             peerConnection.close();
             peerConnection = null;

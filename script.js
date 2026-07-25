@@ -250,20 +250,28 @@ document.addEventListener('DOMContentLoaded', function() {
 
         remoteStream = new MediaStream();
         document.getElementById('remoteVideo').srcObject = remoteStream;
+        document.getElementById('remoteAudio').srcObject = remoteStream;
         peerConnection.ontrack = (event) => {
-            event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
+            event.streams[0].getTracks().forEach(track => {
+                remoteStream.addTrack(track);
+                if (track.kind === 'audio') {
+                    const audio = document.getElementById('remoteAudio');
+                    audio.srcObject = remoteStream;
+                    audio.play().catch(() => {});
+                }
+            });
         };
 
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
-                ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate }));
+                ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate.toJSON() }));
             }
         };
 
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
 
-        ws.send(JSON.stringify({ type: 'call_offer', to: callTarget, offer, isVideo: video }));
+        ws.send(JSON.stringify({ type: 'call_offer', to: callTarget, offer: offer.toJSON(), isVideo: video }));
 
         document.getElementById('callAvatar').textContent = username[0];
         document.getElementById('callName').textContent = username;
@@ -291,13 +299,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
             remoteStream = new MediaStream();
             document.getElementById('remoteVideo').srcObject = remoteStream;
+            document.getElementById('remoteAudio').srcObject = remoteStream;
             peerConnection.ontrack = (event) => {
-                event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
+                event.streams[0].getTracks().forEach(track => {
+                    remoteStream.addTrack(track);
+                    if (track.kind === 'audio') {
+                        const audio = document.getElementById('remoteAudio');
+                        audio.srcObject = remoteStream;
+                        audio.play().catch(() => {});
+                    }
+                });
             };
 
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
-                    ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate }));
+                    ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate.toJSON() }));
                 }
             };
 
@@ -305,7 +321,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const answer = await peerConnection.createAnswer();
             await peerConnection.setLocalDescription(answer);
 
-            ws.send(JSON.stringify({ type: 'call_answer', to: callTarget, answer }));
+            ws.send(JSON.stringify({ type: 'call_answer', to: callTarget, answer: answer.toJSON() }));
 
             document.getElementById('callAvatar').textContent = data.from[0];
             document.getElementById('callName').textContent = data.from;
@@ -359,6 +375,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         document.getElementById('localVideo').srcObject = null;
         document.getElementById('remoteVideo').srcObject = null;
+        document.getElementById('remoteAudio').srcObject = null;
         document.getElementById('callModal').style.display = 'none';
         document.getElementById('remoteVideo').style.display = 'block';
         isMuted = false;

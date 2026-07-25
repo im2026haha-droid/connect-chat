@@ -756,22 +756,19 @@ body {
 
 /* Responsive */
 @media (max-width: 900px) {
-    .app-container {
-        flex-direction: column;
-    }
-
     .sidebar {
         position: fixed;
         top: 0;
-        left: -320px;
+        left: 0;
         width: 280px;
         height: 100vh;
         z-index: 1000;
-        transition: left 0.3s;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
     }
 
     .sidebar.open {
-        left: 0;
+        transform: translateX(0);
         box-shadow: 5px 0 30px rgba(0,0,0,0.5);
     }
 
@@ -784,7 +781,9 @@ body {
     }
 
     .chat-main {
-        width: 100%;
+        width: 100% !important;
+        flex: 1 !important;
+        min-width: 0 !important;
         height: 100vh;
     }
 

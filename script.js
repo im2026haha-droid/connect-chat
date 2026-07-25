@@ -227,23 +227,61 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ========== WebRTC Call Logic ==========
 
+    let callTimeout = null;
+
     async function getMedia(video) {
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
+            const constraints = { audio: true };
+            if (video) constraints.video = { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' };
+            localStream = await navigator.mediaDevices.getUserMedia(constraints);
             document.getElementById('localVideo').srcObject = localStream;
             return localStream;
         } catch (err) {
             console.error('Media error:', err);
-            showSystem('카메라/마이크 접근 권한이 필요합니다.');
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                showSystem('마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크 권한을 허용해주세요.');
+            } else if (err.name === 'NotFoundError') {
+                showSystem('마이크를 찾을 수 없습니다. 장치를 연결해주세요.');
+            } else {
+                showSystem('카메라/마이크 접근 권한이 필요합니다: ' + err.message);
+            }
             return null;
         }
     }
 
+    function clearCallTimeout() {
+        if (callTimeout) { clearTimeout(callTimeout); callTimeout = null; }
+    }
+
     async function startCall(username, video) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            showSystem('서버 연결이 끊어져 있습니다. 잠시 후 다시 시도해주세요.');
+            return;
+        }
+        if (peerConnection) {
+            showSystem('이미 통화 중입니다.');
+            return;
+        }
+
         callTarget = username;
         isVideoCall = video;
+
+        document.getElementById('callAvatar').textContent = username[0];
+        document.getElementById('callName').textContent = username;
+        document.getElementById('callStatus').textContent = '연결 중...';
+        document.getElementById('callModal').style.display = 'flex';
+        if (!video) {
+            document.getElementById('remoteVideo').style.display = 'none';
+        } else {
+            document.getElementById('remoteVideo').style.display = 'block';
+        }
+        document.getElementById('localVideo').style.display = video ? 'block' : 'none';
+
         const stream = await getMedia(video);
-        if (!stream) return;
+        if (!stream) {
+            endCall();
+            return;
+        }
 
         peerConnection = new RTCPeerConnection(ICE_SERVERS);
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
@@ -263,22 +301,40 @@ document.addEventListener('DOMContentLoaded', function() {
         };
 
         peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
+            if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate.toJSON() }));
             }
         };
 
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
+        peerConnection.onconnectionstatechange = () => {
+            if (peerConnection) {
+                const state = peerConnection.connectionState;
+                document.getElementById('callStatus').textContent = state === 'connected' ? '통화 중...' : state === 'failed' ? '연결 실패' : '연결 중...';
+                if (state === 'failed' || state === 'disconnected') {
+                    endCall();
+                    showSystem('통화 연결이 끊어졌습니다.');
+                }
+            }
+        };
 
-        ws.send(JSON.stringify({ type: 'call_offer', to: callTarget, offer: offer.toJSON(), isVideo: video }));
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            ws.send(JSON.stringify({ type: 'call_offer', to: callTarget, offer: offer.toJSON(), isVideo: video }));
+        } catch (err) {
+            console.error('Offer error:', err);
+            showSystem('통화 연결에 실패했습니다.');
+            endCall();
+            return;
+        }
 
-        document.getElementById('callAvatar').textContent = username[0];
-        document.getElementById('callName').textContent = username;
-        document.getElementById('callStatus').textContent = '연결 중...';
-        document.getElementById('callModal').style.display = 'flex';
-        if (!video) document.getElementById('remoteVideo').style.display = 'none';
-        else document.getElementById('remoteVideo').style.display = 'block';
+        callTimeout = setTimeout(() => {
+            if (peerConnection) {
+                showSystem('상대가 응답하지 않습니다.');
+                if (callTarget) ws.send(JSON.stringify({ type: 'call_end', to: callTarget }));
+                endCall();
+            }
+        }, 30000);
     }
 
     async function handleCallOffer(data) {
@@ -289,10 +345,18 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('incomingName').textContent = data.from;
         document.getElementById('incomingCallModal').style.display = 'flex';
 
+        clearCallTimeout();
+        callTimeout = setTimeout(() => {
+            document.getElementById('incomingCallModal').style.display = 'none';
+            showSystem('통화 요청 시간이 초과되었습니다.');
+            callTarget = null;
+        }, 20000);
+
         document.getElementById('callAccept').onclick = async () => {
+            clearCallTimeout();
             document.getElementById('incomingCallModal').style.display = 'none';
             const stream = await getMedia(data.isVideo);
-            if (!stream) return;
+            if (!stream) { callTarget = null; return; }
 
             peerConnection = new RTCPeerConnection(ICE_SERVERS);
             localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
@@ -312,34 +376,59 @@ document.addEventListener('DOMContentLoaded', function() {
             };
 
             peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
+                if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate.toJSON() }));
                 }
             };
 
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
+            peerConnection.onconnectionstatechange = () => {
+                if (peerConnection) {
+                    const state = peerConnection.connectionState;
+                    document.getElementById('callStatus').textContent = state === 'connected' ? '통화 중...' : state === 'failed' ? '연결 실패' : '연결 중...';
+                    if (state === 'failed' || state === 'disconnected') {
+                        endCall();
+                        showSystem('통화 연결이 끊어졌습니다.');
+                    }
+                }
+            };
 
-            ws.send(JSON.stringify({ type: 'call_answer', to: callTarget, answer: answer.toJSON() }));
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                ws.send(JSON.stringify({ type: 'call_answer', to: callTarget, answer: answer.toJSON() }));
+            } catch (err) {
+                console.error('Answer error:', err);
+                showSystem('통화 연결에 실패했습니다.');
+                endCall();
+                return;
+            }
 
             document.getElementById('callAvatar').textContent = data.from[0];
             document.getElementById('callName').textContent = data.from;
             document.getElementById('callStatus').textContent = '통화 중...';
             document.getElementById('callModal').style.display = 'flex';
-            if (!data.isVideo) document.getElementById('remoteVideo').style.display = 'none';
-            else document.getElementById('remoteVideo').style.display = 'block';
+            if (!data.isVideo) {
+                document.getElementById('remoteVideo').style.display = 'none';
+            } else {
+                document.getElementById('remoteVideo').style.display = 'block';
+            }
+            document.getElementById('localVideo').style.display = data.isVideo ? 'block' : 'none';
         };
 
         document.getElementById('callReject').onclick = () => {
+            clearCallTimeout();
             document.getElementById('incomingCallModal').style.display = 'none';
-            ws.send(JSON.stringify({ type: 'call_reject', to: callTarget }));
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'call_reject', to: callTarget }));
+            }
             callTarget = null;
         };
     }
 
     async function handleCallAnswer(data) {
         if (peerConnection) {
+            clearCallTimeout();
             await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
             document.getElementById('callStatus').textContent = '통화 중...';
         }
@@ -351,6 +440,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function handleCallEnd(data) {
+        clearCallTimeout();
         endCall();
     }
 
@@ -361,6 +451,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function endCall() {
+        clearCallTimeout();
         if (peerConnection) {
             peerConnection.close();
             peerConnection = null;

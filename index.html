@@ -102,6 +102,36 @@
             <span class="emoji" data-emoji="💪">💪</span>
         </div>
     </div>
+
+    <div class="call-modal" id="callModal" style="display:none;">
+        <div class="call-container">
+            <div class="call-info">
+                <div class="call-avatar" id="callAvatar">?</div>
+                <div class="call-name" id="callName">-</div>
+                <div class="call-status" id="callStatus">통화 중...</div>
+            </div>
+            <video id="remoteVideo" autoplay playsinline class="remote-video"></video>
+            <video id="localVideo" autoplay playsinline muted class="local-video"></video>
+            <div class="call-controls">
+                <button class="call-btn call-mute" id="callMute" title="마이크">🎤</button>
+                <button class="call-btn call-video-toggle" id="callVideoToggle" title="카메라">📹</button>
+                <button class="call-btn call-end" id="callEnd" title="통화 종료">📞</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="incoming-call-modal" id="incomingCallModal" style="display:none;">
+        <div class="incoming-call-box">
+            <div class="incoming-call-avatar" id="incomingAvatar">?</div>
+            <div class="incoming-call-name" id="incomingName">-</div>
+            <div class="incoming-call-text">통화 요청</div>
+            <div class="incoming-call-buttons">
+                <button class="call-btn call-accept" id="callAccept">수락</button>
+                <button class="call-btn call-reject" id="callReject">거절</button>
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>

@@ -3,6 +3,22 @@ let myUsername = '';
 let myColor = '#6366f1';
 let authToken = '';
 
+let localStream = null;
+let remoteStream = null;
+let peerConnection = null;
+let callTarget = null;
+let isVideoCall = false;
+let isMuted = false;
+let isVideoOff = false;
+
+const ICE_SERVERS = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+    ]
+};
+
 document.addEventListener('DOMContentLoaded', function() {
     const loginScreen = document.getElementById('loginScreen');
     const appContainer = document.getElementById('appContainer');
@@ -89,6 +105,7 @@ document.addEventListener('DOMContentLoaded', function() {
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('chat_session');
         if (ws) ws.close();
+        endCall();
         appContainer.style.display = 'none';
         loginScreen.style.display = 'flex';
         loginForm.style.display = 'block';
@@ -124,6 +141,11 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'user_left': updateUsers(data.users); showSystem(`${data.username}님이 퇴장했습니다.`); break;
             case 'typing': showTyping(data.username); break;
             case 'history': data.messages.forEach(m => addMessage(m.username, m.text, m.time, m.color, true)); scrollToBottom(); break;
+            case 'call_offer': handleCallOffer(data); break;
+            case 'call_answer': handleCallAnswer(data); break;
+            case 'call_reject': handleCallReject(data); break;
+            case 'call_end': handleCallEnd(data); break;
+            case 'ice_candidate': handleIceCandidate(data); break;
         }
     }
 
@@ -148,9 +170,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateUsers(users) {
         document.getElementById('memberCount').textContent = `${users.length}명 접속중`;
-        document.getElementById('onlineUsers').innerHTML = users.map(u =>
-            `<li class="online-user-item"><div class="avatar small" style="background:${u.color};">${u.username[0]}</div><span class="username">${u.username}</span><span class="status-dot online"></span></li>`
+        document.getElementById('onlineUsers').innerHTML = users.filter(u => u.username !== myUsername).map(u =>
+            `<li class="online-user-item" data-user="${u.username}">
+                <div class="avatar small" style="background:${u.color};">${u.username[0]}</div>
+                <span class="username">${u.username}</span>
+                <button class="call-user-btn" data-user="${u.username}" title="통화">📞</button>
+            </li>`
         ).join('');
+
+        document.querySelectorAll('.call-user-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                startCall(btn.dataset.user, false);
+            });
+        });
+
+        document.querySelectorAll('.online-user-item').forEach(item => {
+            item.addEventListener('dblclick', () => {
+                startCall(item.dataset.user, true);
+            });
+        });
     }
 
     function showTyping(username) {
@@ -180,19 +219,180 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) emojiPicker.classList.remove('show');
     });
     menuBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
-
     document.addEventListener('click', e => {
         if (window.innerWidth <= 900 && sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== menuBtn) {
             sidebar.classList.remove('open');
         }
     });
 
-    sendBtn.addEventListener('click', () => {
-        if (window.innerWidth <= 900) sidebar.classList.remove('open');
+    // ========== WebRTC Call Logic ==========
+
+    async function getMedia(video) {
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video });
+            document.getElementById('localVideo').srcObject = localStream;
+            return localStream;
+        } catch (err) {
+            console.error('Media error:', err);
+            showSystem('카메라/마이크 접근 권한이 필요합니다.');
+            return null;
+        }
+    }
+
+    async function startCall(username, video) {
+        callTarget = username;
+        isVideoCall = video;
+        const stream = await getMedia(video);
+        if (!stream) return;
+
+        peerConnection = new RTCPeerConnection(ICE_SERVERS);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+        remoteStream = new MediaStream();
+        document.getElementById('remoteVideo').srcObject = remoteStream;
+        peerConnection.ontrack = (event) => {
+            event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
+        };
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate }));
+            }
+        };
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        ws.send(JSON.stringify({ type: 'call_offer', to: callTarget, offer, isVideo: video }));
+
+        document.getElementById('callAvatar').textContent = username[0];
+        document.getElementById('callName').textContent = username;
+        document.getElementById('callStatus').textContent = '연결 중...';
+        document.getElementById('callModal').style.display = 'flex';
+        if (!video) document.getElementById('remoteVideo').style.display = 'none';
+        else document.getElementById('remoteVideo').style.display = 'block';
+    }
+
+    async function handleCallOffer(data) {
+        callTarget = data.from;
+        isVideoCall = data.isVideo;
+
+        document.getElementById('incomingAvatar').textContent = data.from[0];
+        document.getElementById('incomingName').textContent = data.from;
+        document.getElementById('incomingCallModal').style.display = 'flex';
+
+        document.getElementById('callAccept').onclick = async () => {
+            document.getElementById('incomingCallModal').style.display = 'none';
+            const stream = await getMedia(data.isVideo);
+            if (!stream) return;
+
+            peerConnection = new RTCPeerConnection(ICE_SERVERS);
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            remoteStream = new MediaStream();
+            document.getElementById('remoteVideo').srcObject = remoteStream;
+            peerConnection.ontrack = (event) => {
+                event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate }));
+                }
+            };
+
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+
+            ws.send(JSON.stringify({ type: 'call_answer', to: callTarget, answer }));
+
+            document.getElementById('callAvatar').textContent = data.from[0];
+            document.getElementById('callName').textContent = data.from;
+            document.getElementById('callStatus').textContent = '통화 중...';
+            document.getElementById('callModal').style.display = 'flex';
+            if (!data.isVideo) document.getElementById('remoteVideo').style.display = 'none';
+            else document.getElementById('remoteVideo').style.display = 'block';
+        };
+
+        document.getElementById('callReject').onclick = () => {
+            document.getElementById('incomingCallModal').style.display = 'none';
+            ws.send(JSON.stringify({ type: 'call_reject', to: callTarget }));
+            callTarget = null;
+        };
+    }
+
+    async function handleCallAnswer(data) {
+        if (peerConnection) {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            document.getElementById('callStatus').textContent = '통화 중...';
+        }
+    }
+
+    function handleCallReject(data) {
+        showSystem(`${data.from}님이 통화를 거절했습니다.`);
+        endCall();
+    }
+
+    function handleCallEnd(data) {
+        endCall();
+    }
+
+    async function handleIceCandidate(data) {
+        if (peerConnection && data.candidate) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        }
+    }
+
+    function endCall() {
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        if (localStream) {
+            localStream.getTracks().forEach(t => t.stop());
+            localStream = null;
+        }
+        if (remoteStream) {
+            remoteStream.getTracks().forEach(t => t.stop());
+            remoteStream = null;
+        }
+        document.getElementById('localVideo').srcObject = null;
+        document.getElementById('remoteVideo').srcObject = null;
+        document.getElementById('callModal').style.display = 'none';
+        document.getElementById('remoteVideo').style.display = 'block';
+        isMuted = false;
+        isVideoOff = false;
+        callTarget = null;
+    }
+
+    document.getElementById('callEnd').addEventListener('click', () => {
+        if (callTarget) {
+            ws.send(JSON.stringify({ type: 'call_end', to: callTarget }));
+        }
+        endCall();
     });
 
-    messageInput.addEventListener('keypress', e => {
-        if (e.key === 'Enter' && window.innerWidth <= 900) sidebar.classList.remove('open');
+    document.getElementById('callMute').addEventListener('click', function() {
+        if (localStream) {
+            const audioTrack = localStream.getAudioTracks()[0];
+            if (audioTrack) {
+                audioTrack.enabled = !audioTrack.enabled;
+                isMuted = !audioTrack.enabled;
+                this.classList.toggle('active', isMuted);
+            }
+        }
+    });
+
+    document.getElementById('callVideoToggle').addEventListener('click', function() {
+        if (localStream) {
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = !videoTrack.enabled;
+                isVideoOff = !videoTrack.enabled;
+                this.classList.toggle('active', isVideoOff);
+            }
+        }
     });
 
     function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }

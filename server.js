@@ -83,6 +83,13 @@ app.post('/api/token-login', (req, res) => {
     res.json({ error: 'invalid' });
 });
 
+function sendTo(username, msg) {
+    const u = connectedUsers[username];
+    if (u && u.ws.readyState === 1) {
+        u.ws.send(JSON.stringify(msg));
+    }
+}
+
 wss.on('connection', (ws) => {
     let myUsername = null;
 
@@ -118,6 +125,26 @@ wss.on('connection', (ws) => {
 
             else if (msg.type === 'typing' && myUsername) {
                 broadcast({ type: 'typing', username: myUsername }, ws);
+            }
+
+            else if (msg.type === 'call_offer' && myUsername) {
+                sendTo(msg.to, { type: 'call_offer', from: myUsername, offer: msg.offer, isVideo: msg.isVideo });
+            }
+
+            else if (msg.type === 'call_answer' && myUsername) {
+                sendTo(msg.to, { type: 'call_answer', from: myUsername, answer: msg.answer });
+            }
+
+            else if (msg.type === 'call_reject' && myUsername) {
+                sendTo(msg.to, { type: 'call_reject', from: myUsername });
+            }
+
+            else if (msg.type === 'call_end' && myUsername) {
+                sendTo(msg.to, { type: 'call_end', from: myUsername });
+            }
+
+            else if (msg.type === 'ice_candidate' && myUsername) {
+                sendTo(msg.to, { type: 'ice_candidate', from: myUsername, candidate: msg.candidate });
             }
         } catch (e) {}
     });

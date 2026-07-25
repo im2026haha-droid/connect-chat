@@ -756,9 +756,15 @@ body {
 
 /* Responsive */
 @media (max-width: 900px) {
+    .app-container {
+        flex-direction: column;
+    }
+
     .sidebar {
         position: fixed;
+        top: 0;
         left: -320px;
+        width: 280px;
         height: 100vh;
         z-index: 1000;
         transition: left 0.3s;
@@ -766,6 +772,7 @@ body {
 
     .sidebar.open {
         left: 0;
+        box-shadow: 5px 0 30px rgba(0,0,0,0.5);
     }
 
     .menu-btn {
@@ -774,6 +781,16 @@ body {
 
     .emoji-picker {
         right: 20px;
+    }
+
+    .chat-main {
+        width: 100%;
+        height: 100vh;
+    }
+
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
     }
 }
 

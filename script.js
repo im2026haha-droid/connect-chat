@@ -176,8 +176,25 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.emoji').forEach(em => {
         em.addEventListener('click', () => { messageInput.value += em.dataset.emoji; messageInput.focus(); });
     });
-    document.addEventListener('click', e => { if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) emojiPicker.classList.remove('show'); });
+    document.addEventListener('click', e => {
+        if (!emojiPicker.contains(e.target) && e.target !== emojiBtn) emojiPicker.classList.remove('show');
+    });
     menuBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
+
+    document.addEventListener('click', e => {
+        if (window.innerWidth <= 900 && sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target !== menuBtn) {
+            sidebar.classList.remove('open');
+        }
+    });
+
+    sendBtn.addEventListener('click', () => {
+        if (window.innerWidth <= 900) sidebar.classList.remove('open');
+    });
+
+    messageInput.addEventListener('keypress', e => {
+        if (e.key === 'Enter' && window.innerWidth <= 900) sidebar.classList.remove('open');
+    });
+
     function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
     function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
 });

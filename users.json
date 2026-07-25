@@ -1,0 +1,16 @@
+{
+  "차현준": {
+    "password_hash": "532f538e1631afd4a2f8feaafadce5ab94e0e70aa12ebb296231aa29fc817841",
+    "salt": "d68c91042ad019aeca6bef80e15b64c4",
+    "color": "#FF6B6B",
+    "token": "e1d1deab7629c16b844f4af2c5961eff2e83dbabd6bce73ce5f07a972deac49c",
+    "created_at": "2026-07-25T20:01:50.273823"
+  },
+  "힝구": {
+    "password_hash": "bc76bee3c9e3f82371b74a1fe010e4b8dab3e87628bf41139f769fdae26bd86a",
+    "salt": "8b955bd074a5ec39e345b9798d160a8a",
+    "color": "#FF6B6B",
+    "token": "814ff127c9320d78cb36182872833a98f85f597cc3259d637abed4c1ca11d887",
+    "created_at": "2026-07-25T20:02:22.197536"
+  }
+}

@@ -128,18 +128,24 @@ wss.on('connection', (ws) => {
             }
 
             else if (msg.type === 'call_offer' && myUsername) {
+                console.log(`[SIGNAL] ${myUsername} -> ${msg.to}: call_offer`);
+                const targetUser = connectedUsers[msg.to];
+                console.log(`[SIGNAL] Target ${msg.to} online: ${!!targetUser}`);
                 sendTo(msg.to, { type: 'call_offer', from: myUsername, offer: msg.offer, isVideo: msg.isVideo });
             }
 
             else if (msg.type === 'call_answer' && myUsername) {
+                console.log(`[SIGNAL] ${myUsername} -> ${msg.to}: call_answer`);
                 sendTo(msg.to, { type: 'call_answer', from: myUsername, answer: msg.answer });
             }
 
             else if (msg.type === 'call_reject' && myUsername) {
+                console.log(`[SIGNAL] ${myUsername} -> ${msg.to}: call_reject`);
                 sendTo(msg.to, { type: 'call_reject', from: myUsername });
             }
 
             else if (msg.type === 'call_end' && myUsername) {
+                console.log(`[SIGNAL] ${myUsername} -> ${msg.to}: call_end`);
                 sendTo(msg.to, { type: 'call_end', from: myUsername });
             }
 

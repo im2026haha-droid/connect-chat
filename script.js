@@ -297,8 +297,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
         pc.onicecandidate = (event) => {
             if (event.candidate && ws && ws.readyState === WebSocket.OPEN && callTarget) {
+                console.log('ICE candidate:', event.candidate.candidate);
                 ws.send(JSON.stringify({ type: 'ice_candidate', to: callTarget, candidate: event.candidate.toJSON() }));
+            } else if (!event.candidate) {
+                console.log('ICE gathering complete');
+                showSystem('ICE 수집 완료');
             }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            console.log('ICE connection state:', pc.iceConnectionState);
+            showSystem('ICE: ' + pc.iceConnectionState);
         };
 
         pc.onconnectionstatechange = () => {
@@ -367,10 +376,13 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const offer = await peerConnection.createOffer();
             await peerConnection.setLocalDescription(offer);
+            const offerJson = peerConnection.localDescription.toJSON();
+            console.log('Offer SDP:', offerJson.sdp.substring(0, 100));
+            showSystem('오퍼 생성 완료, 전송 중...');
             ws.send(JSON.stringify({
                 type: 'call_offer',
                 to: callTarget,
-                offer: peerConnection.localDescription.toJSON(),
+                offer: offerJson,
                 isVideo: video
             }));
         } catch (err) {
@@ -422,9 +434,12 @@ document.addEventListener('DOMContentLoaded', function() {
             peerConnection = createPeerConnection();
 
             try {
+                showSystem('오퍼 수신, Answer 생성 중...');
                 await peerConnection.setRemoteDescription(data.offer);
+                showSystem('RemoteDescription 설정 완료');
                 const answer = await peerConnection.createAnswer();
                 await peerConnection.setLocalDescription(answer);
+                showSystem('Answer 전송 완료');
                 ws.send(JSON.stringify({
                     type: 'call_answer',
                     to: callTarget,

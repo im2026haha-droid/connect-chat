@@ -1,291 +1,265 @@
 import asyncio
 import json
-import os
 import hashlib
+import os
+import sys
 import secrets
+import webbrowser
 from datetime import datetime
+from pathlib import Path
+
 from aiohttp import web
-import aiohttp
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-USERS_FILE = os.path.join(BASE_DIR, 'users.json')
-CHAT_HISTORY_FILE = os.path.join(BASE_DIR, 'chat_history.json')
+try:
+    import websockets
+except ImportError:
+    websockets = None
 
+BASE_DIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
+
+if getattr(sys, 'frozen', False):
+    BUNDLE_DIR = Path(sys._MEIPASS)
+else:
+    BUNDLE_DIR = BASE_DIR
+
+USERS_FILE = BASE_DIR / 'users.json'
+HISTORY_FILE = BASE_DIR / 'history.json'
+
+users = {}
+chat_history = []
 connected_users = {}
-active_sessions = {}
+
 
 def load_users():
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+    global users
+    try:
+        users = json.loads(USERS_FILE.read_text(encoding='utf-8'))
+    except Exception:
+        users = {}
 
-def save_users(users):
-    with open(USERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
 
-def load_chat_history():
-    if os.path.exists(CHAT_HISTORY_FILE):
-        with open(CHAT_HISTORY_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return []
+def save_users():
+    USERS_FILE.write_text(json.dumps(users, indent=2, ensure_ascii=False), encoding='utf-8')
 
-def save_chat_history(history):
-    with open(CHAT_HISTORY_FILE, 'w', encoding='utf-8') as f:
-        json.dump(history[-200:], f, ensure_ascii=False, indent=2)
 
-def hash_password(password, salt=None):
-    if salt is None:
+def load_history():
+    global chat_history
+    try:
+        chat_history = json.loads(HISTORY_FILE.read_text(encoding='utf-8'))
+    except Exception:
+        chat_history = []
+
+
+def save_history():
+    HISTORY_FILE.write_text(json.dumps(chat_history[-500:], ensure_ascii=False), encoding='utf-8')
+
+
+def hash_pw(pw, salt=None):
+    if not salt:
         salt = secrets.token_hex(16)
-    hashed = hashlib.sha256((password + salt).encode()).hexdigest()
-    return hashed, salt
+    h = hashlib.sha256((pw + salt).encode()).hexdigest()
+    return h, salt
 
-def verify_password(password, hashed, salt):
-    new_hash, _ = hash_password(password, salt)
-    return new_hash == hashed
 
-chat_history = load_chat_history()
+def gen_token():
+    return secrets.token_hex(32)
 
-async def register_handler(request):
-    try:
-        data = await request.json()
-        username = data.get('username', '').strip()
-        password = data.get('password', '')
-        color = data.get('color', '#6366f1')
 
-        if not username or not password:
-            return web.json_response({'error': '이름과 비밀번호를 입력하세요'}, status=400)
-        
-        if len(username) < 2 or len(username) > 12:
-            return web.json_response({'error': '이름은 2~12자로 입력하세요'}, status=400)
-        
-        if len(password) < 4:
-            return web.json_response({'error': '비밀번호는 4자 이상으로 입력하세요'}, status=400)
+def user_list():
+    return [{"username": name, "color": info["color"]} for name, info in connected_users.items()]
 
-        users = load_users()
-        if username in users:
-            return web.json_response({'error': '이미 사용 중인 이름입니다'}, status=400)
 
-        hashed, salt = hash_password(password)
-        token = secrets.token_hex(32)
+async def handle_register(request):
+    data = await request.json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    color = data.get('color', '#6366f1')
+    if not username or not password:
+        return web.json_response({'error': '이름과 비밀번호를 입력하세요'})
+    if len(username) < 2 or len(username) > 12:
+        return web.json_response({'error': '이름은 2~12자로 입력하세요'})
+    if len(password) < 4:
+        return web.json_response({'error': '비밀번호는 4자 이상으로 입력하세요'})
+    if username in users:
+        return web.json_response({'error': '이미 사용 중인 이름입니다'})
+    h, salt = hash_pw(password)
+    token = gen_token()
+    users[username] = {'hash': h, 'salt': salt, 'color': color, 'token': token}
+    save_users()
+    return web.json_response({'success': True, 'token': token, 'username': username, 'color': color})
 
-        users[username] = {
-            'password_hash': hashed,
-            'salt': salt,
-            'color': color,
-            'token': token,
-            'created_at': datetime.now().isoformat()
-        }
-        save_users(users)
 
-        return web.json_response({
-            'success': True,
-            'token': token,
-            'username': username,
-            'color': color
-        })
-    except Exception as e:
-        return web.json_response({'error': str(e)}, status=500)
+async def handle_login(request):
+    data = await request.json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    if not username or not password:
+        return web.json_response({'error': '이름과 비밀번호를 입력하세요'})
+    user = users.get(username)
+    if not user:
+        return web.json_response({'error': '존재하지 않는 계정입니다'})
+    h, _ = hash_pw(password, user['salt'])
+    if h != user['hash']:
+        return web.json_response({'error': '비밀번호가 틀렸습니다'})
+    token = gen_token()
+    user['token'] = token
+    save_users()
+    return web.json_response({'success': True, 'token': token, 'username': username, 'color': user['color']})
 
-async def login_handler(request):
-    try:
-        data = await request.json()
-        username = data.get('username', '').strip()
-        password = data.get('password', '')
 
-        if not username or not password:
-            return web.json_response({'error': '이름과 비밀번호를 입력하세요'}, status=400)
+async def handle_token_login(request):
+    data = await request.json()
+    username = data.get('username', '')
+    token = data.get('token', '')
+    user = users.get(username)
+    if user and user['token'] == token:
+        return web.json_response({'success': True, 'username': username, 'color': user['color']})
+    return web.json_response({'error': 'invalid'})
 
-        users = load_users()
-        if username not in users:
-            return web.json_response({'error': '존재하지 않는 계정입니다'}, status=401)
-
-        user = users[username]
-        if not verify_password(password, user['password_hash'], user['salt']):
-            return web.json_response({'error': '비밀번호가 틀렸습니다'}, status=401)
-
-        token = secrets.token_hex(32)
-        users[username]['token'] = token
-        save_users(users)
-
-        return web.json_response({
-            'success': True,
-            'token': token,
-            'username': username,
-            'color': user['color']
-        })
-    except Exception as e:
-        return web.json_response({'error': str(e)}, status=500)
-
-async def token_login_handler(request):
-    try:
-        data = await request.json()
-        username = data.get('username', '')
-        token = data.get('token', '')
-
-        users = load_users()
-        if username in users and users[username]['token'] == token:
-            return web.json_response({
-                'success': True,
-                'username': username,
-                'color': users[username]['color']
-            })
-        return web.json_response({'error': 'invalid'}, status=401)
-    except:
-        return web.json_response({'error': 'invalid'}, status=401)
-
-async def change_color_handler(request):
-    try:
-        data = await request.json()
-        username = data.get('username', '')
-        token = data.get('token', '')
-        color = data.get('color', '#6366f1')
-
-        users = load_users()
-        if username in users and users[username]['token'] == token:
-            users[username]['color'] = color
-            save_users(users)
-            
-            if username in [u['username'] for u in connected_users.values()]:
-                for ws, info in connected_users.items():
-                    if info['username'] == username:
-                        info['color'] = color
-                        break
-                await broadcast({
-                    'type': 'user_color_changed',
-                    'username': username,
-                    'color': color,
-                    'users': [
-                        {'username': u['username'], 'color': u['color']}
-                        for u in connected_users.values()
-                    ]
-                })
-            
-            return web.json_response({'success': True})
-        return web.json_response({'error': 'invalid'}, status=401)
-    except:
-        return web.json_response({'error': 'invalid'}, status=401)
 
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    print(f"WebSocket connected from {request.remote}")
+    my_username = None
 
     try:
-        async for msg in ws:
-            if msg.type == aiohttp.WSMsgType.TEXT:
-                data = json.loads(msg.data)
+        async for msg_str in ws:
+            if msg_str.type == web.WSMsgType.TEXT:
+                try:
+                    msg = json.loads(msg_str.data)
+                except Exception:
+                    continue
 
-                if data['type'] == 'join':
-                    username = data['username']
-                    token = data.get('token', '')
-                    
-                    users = load_users()
-                    if username not in users or users[username]['token'] != token:
+                if msg.get('type') == 'join':
+                    username = msg.get('username', '')
+                    token = msg.get('token', '')
+                    user = users.get(username)
+                    if not user or user['token'] != token:
                         await ws.send_json({'type': 'auth_error'})
                         continue
-                    
-                    color = users[username]['color']
+                    my_username = username
+                    connected_users[my_username] = {'color': user['color'], 'ws': ws}
+                    await broadcast({'type': 'user_joined', 'username': my_username, 'users': user_list()})
+                    await ws.send_json({'type': 'history', 'messages': chat_history[-50:]})
 
-                    for existing_ws, info in list(connected_users.items()):
-                        if info['username'] == username:
-                            del connected_users[existing_ws]
-
-                    connected_users[ws] = {
-                        'username': username,
-                        'color': color,
-                        'joined_at': datetime.now().isoformat()
-                    }
-                    print(f"{username} joined")
-
-                    await broadcast({
-                        'type': 'user_joined',
-                        'username': username,
-                        'users': [
-                            {'username': u['username'], 'color': u['color']}
-                            for u in connected_users.values()
-                        ]
-                    })
-
-                    await ws.send_json({
-                        'type': 'history',
-                        'messages': chat_history[-50:]
-                    })
-
-                elif data['type'] == 'message':
-                    if ws not in connected_users:
-                        continue
-                    username = connected_users[ws]['username']
-                    msg_data = {
+                elif msg.get('type') == 'message' and my_username:
+                    now = datetime.now()
+                    time_str = now.strftime('%p %I:%M').replace('AM', '오전').replace('PM', '오후')
+                    entry = {
                         'type': 'message',
-                        'username': username,
-                        'text': data['text'],
-                        'time': datetime.now().strftime('%H:%M'),
-                        'color': connected_users[ws]['color']
+                        'username': my_username,
+                        'text': msg.get('text', ''),
+                        'time': time_str,
+                        'color': connected_users.get(my_username, {}).get('color', '#6366f1')
                     }
-                    chat_history.append(msg_data)
-                    save_chat_history(chat_history)
-                    await broadcast(msg_data)
+                    chat_history.append(entry)
+                    save_history()
+                    await broadcast(entry)
 
-                elif data['type'] == 'typing':
-                    if ws not in connected_users:
-                        continue
-                    username = connected_users[ws]['username']
-                    await broadcast({
-                        'type': 'typing',
-                        'username': username
-                    }, ws)
+                elif msg.get('type') == 'typing' and my_username:
+                    await broadcast({'type': 'typing', 'username': my_username}, exclude=ws)
 
-            elif msg.type == aiohttp.WSMsgType.ERROR:
-                print(f'WebSocket error: {ws.exception()}')
+                elif msg.get('type') == 'call_offer' and my_username:
+                    print(f"[SIGNAL] {my_username} -> {msg.get('to')}: call_offer")
+                    target = connected_users.get(msg.get('to'))
+                    print(f"[SIGNAL] Target {msg.get('to')} online: {target is not None}")
+                    await send_to(msg.get('to'), {'type': 'call_offer', 'from': my_username, 'offer': msg.get('offer'), 'isVideo': msg.get('isVideo')})
 
+                elif msg.get('type') == 'call_answer' and my_username:
+                    print(f"[SIGNAL] {my_username} -> {msg.get('to')}: call_answer")
+                    await send_to(msg.get('to'), {'type': 'call_answer', 'from': my_username, 'answer': msg.get('answer')})
+
+                elif msg.get('type') == 'call_reject' and my_username:
+                    print(f"[SIGNAL] {my_username} -> {msg.get('to')}: call_reject")
+                    await send_to(msg.get('to'), {'type': 'call_reject', 'from': my_username})
+
+                elif msg.get('type') == 'call_end' and my_username:
+                    print(f"[SIGNAL] {my_username} -> {msg.get('to')}: call_end")
+                    await send_to(msg.get('to'), {'type': 'call_end', 'from': my_username})
+
+                elif msg.get('type') == 'ice_candidate' and my_username:
+                    await send_to(msg.get('to'), {'type': 'ice_candidate', 'from': my_username, 'candidate': msg.get('candidate')})
+
+    except Exception as e:
+        print(f"WebSocket error: {e}")
     finally:
-        if ws in connected_users:
-            username = connected_users[ws]['username']
-            del connected_users[ws]
-            print(f"{username} left")
-            await broadcast({
-                'type': 'user_left',
-                'username': username,
-                'users': [
-                    {'username': u['username'], 'color': u['color']}
-                    for u in connected_users.values()
-                ]
-            })
+        if my_username and my_username in connected_users:
+            del connected_users[my_username]
+            await broadcast({'type': 'user_left', 'username': my_username, 'users': user_list()})
 
     return ws
 
-async def broadcast(message, sender=None):
-    for ws in list(connected_users.keys()):
+
+async def send_to(username, msg):
+    info = connected_users.get(username)
+    if info:
         try:
-            await ws.send_json(message)
-        except:
+            await info['ws'].send_json(msg)
+        except Exception:
             pass
 
-async def index_handler(request):
-    return web.FileResponse(os.path.join(BASE_DIR, 'index.html'))
 
-async def static_handler(request):
-    filename = request.match_info['filename']
-    filepath = os.path.join(BASE_DIR, filename)
-    if os.path.exists(filepath):
-        return web.FileResponse(filepath)
-    return web.Response(status=404)
+async def broadcast(msg, exclude=None):
+    data = json.dumps(msg, ensure_ascii=False)
+    for info in list(connected_users.values()):
+        if info['ws'] != exclude:
+            try:
+                await info['ws'].send_str(data)
+            except Exception:
+                pass
 
-def create_app():
+
+def get_local_ip():
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
+
+def main():
+    load_users()
+    load_history()
+
     app = web.Application()
-    app.router.add_get('/', index_handler)
+    app.router.add_post('/api/register', handle_register)
+    app.router.add_post('/api/login', handle_login)
+    app.router.add_post('/api/token-login', handle_token_login)
     app.router.add_get('/ws', websocket_handler)
-    app.router.add_post('/api/register', register_handler)
-    app.router.add_post('/api/login', login_handler)
-    app.router.add_post('/api/token-login', token_login_handler)
-    app.router.add_post('/api/change-color', change_color_handler)
-    app.router.add_get('/{filename}', static_handler)
-    return app
+
+    static_dir = BASE_DIR
+    app.router.add_get('/ws', websocket_handler)
+
+    for f in ['index.html', 'style.css', 'script.js']:
+        bundle_path = BUNDLE_DIR / f
+        local_path = BASE_DIR / f
+        if bundle_path.exists() and not local_path.exists():
+            import shutil
+            shutil.copy2(bundle_path, local_path)
+
+    app.router.add_static('/', path=str(static_dir), show_index=True)
+
+    port = int(os.environ.get('PORT', 3000))
+    local_ip = get_local_ip()
+
+    print("=" * 50)
+    print("  Connect Chat 서버")
+    print("=" * 50)
+    print(f"  로컬 접속: http://localhost:{port}")
+    print(f"  같은 네트워크: http://{local_ip}:{port}")
+    print(f"  인터넷 접속: 라우터에서 포트 {port} 포워딩 후")
+    print(f"               http://<공인IP>:{port}")
+    print("=" * 50)
+    print("  종료: Ctrl+C")
+    print("=" * 50)
+
+    web.run_app(app, host='0.0.0.0', port=port, print=None)
+
 
 if __name__ == '__main__':
-    app = create_app()
-    port = int(os.environ.get('PORT', 8080))
-    print(f"Server running on http://0.0.0.0:{port}")
-    web.run_app(app, host='0.0.0.0', port=port)
+    main()

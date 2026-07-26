@@ -222,6 +222,20 @@ def get_local_ip():
         return '127.0.0.1'
 
 
+async def static_handler(request):
+    filename = request.match_info.get('filename', '')
+    if not filename or filename == 'index.html':
+        fp = BUNDLE_DIR / 'index.html' if (BUNDLE_DIR / 'index.html').exists() else BASE_DIR / 'index.html'
+    else:
+        fp = BUNDLE_DIR / filename if (BUNDLE_DIR / filename).exists() else BASE_DIR / filename
+    if fp.exists():
+        ct = 'text/html'
+        if filename.endswith('.css'): ct = 'text/css'
+        elif filename.endswith('.js'): ct = 'application/javascript'
+        return web.Response(text=fp.read_text(encoding='utf-8'), content_type=ct)
+    return web.Response(status=404)
+
+
 def main():
     load_users()
     load_history()
@@ -230,10 +244,6 @@ def main():
     app.router.add_post('/api/register', handle_register)
     app.router.add_post('/api/login', handle_login)
     app.router.add_post('/api/token-login', handle_token_login)
-    app.router.add_get('/ws', websocket_handler)
-
-    static_dir = BASE_DIR
-    app.router.add_get('/ws', websocket_handler)
 
     for f in ['index.html', 'style.css', 'script.js']:
         bundle_path = BUNDLE_DIR / f
@@ -242,7 +252,9 @@ def main():
             import shutil
             shutil.copy2(bundle_path, local_path)
 
-    app.router.add_static('/', path=str(static_dir), show_index=True)
+    app.router.add_get('/ws', websocket_handler)
+    app.router.add_get('/', lambda r: web.FileResponse(BUNDLE_DIR / 'index.html' if (BUNDLE_DIR / 'index.html').exists() else BASE_DIR / 'index.html'))
+    app.router.add_get('/{filename}', static_handler)
 
     port = int(os.environ.get('PORT', 3000))
     local_ip = get_local_ip()
